@@ -12,7 +12,7 @@
     <link rel="apple-touch-icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxOTIgMTkyIj48cGF0aCBmaWxsPSIjMjNjM2U1MCIgZD0iTTE0OCAxMjBjMC0xNy43IDE0LjMtMzIgMzItMzJzMzIgMTQuMyAzMiAzMmMwIDguOC0zLjYgMTYuNy05LjQgMjIuNmwtMTIuMiAxMi4yYy0yLjgtMi44LTYuNi00LjQtMTAuNi00LjRzLTcuOCAxLjYtMTAuNiA0LjRsLTEyLjItMTIuMmMtNS44LTUuOC05LjQtMTMuOC05LjQtMjIuNiAwLTE3LjcgMTQuMy0zMiAzMi0zMnMzMiAxNC4zIDMyIDMyYzAgOC44LTMuNiAxNi43LTkuNCAyMi42bDQuNiA0LjZjNS44IDUuOCAxNS4yIDUuOCAyMXMtNS44IDE1LjItNS44IDIxbC00LjYgNC42YzUuOCA1LjggMTMuOCA5LjQgMjIuNiA5LjQgMTcuNyAwIDMyLTE0LjMgMzItMzJ6TTE0OCAxMjBjMC04LjgtNy4yLTE2LTE2LTE2cy0xNiA3LjItMTYgMTYgNy4yIDE2IDE2IDE2IDE2LTcuMiAxNi0xNnoiLz48L3N2Zz4=">
     
     <!-- UPDATE: Link to external manifest file for PWA -->
-    <link rel="manifest" href="data:application/json;base64,ewogICJuYW1lIjogIlBhIEdlcnJ5cyBNYXJ0IiwKICAic2hvcnRfbmFtZSI6ICJQYSBHZXJyeXMiLAogICJkZXNjcmlwdGlvbiI6ICJTdXBlcm1hcmtldCBQT1MgU3lzdGVtIiwKICAic3RhcnRfdXJsIjogIi4vIiwKICAiZGlzcGxheSI6ICJzdGFuZGFsb25lIiwKICAiYmFja2dyb3VuZF9jb2xvciI6ICIjMmMzZTUwIiwKICAidGhlbWVfY29sb3IiOiAiIzJjM2U1MCIsCiAgImljb25zIjogWwogICAgewogICAgICAic3JjIjogImRhdGE6aW1hZ2Uvc3ZnK3htbDtiYXNlNjQsUEhOMll6QjRiV3h1Y3owaWFIVFhNWEIwTlM5eWJVNU5aV0p2YjJ4b1lYSmhiR3c2T1RZNU5ETTNNak0xTnpBNE1qVTJNVFUyTmpVNU1qQXdNakEwT0RZNU5UQXhNakU0T2pVMk9EazJNVGt4T1E9PSIsCiAgICAgICJzaXplcyI6ICIxNDR4MTQ0IiwKICAgICAgInR5cGUiOiAiaW1hZ2Uvc3ZnK3htbCIKICAgIH0KICBdCn0=">
+    <link rel="manifest" href="manifest.json">
     
     <title>Pa Gerrys Mart - POS System</title>
     
@@ -61,11 +61,11 @@
                 <form id="login-form">
                     <div class="form-group">
                         <label for="login-email">Email</label>
-                        <input type="email" id="login-email" placeholder="Enter your email" required>
+                        <input type="email" id="login-email" placeholder="Enter your email" required autocomplete="email">
                     </div>
                     <div class="form-group">
                         <label for="login-password">Password</label>
-                        <input type="password" id="login-password" placeholder="Enter your password" required>
+                        <input type="password" id="login-password" placeholder="Enter your password" required autocomplete="current-password">
                     </div>
                     <button type="submit" class="login-btn" id="login-submit-btn">Login</button>
                     <div id="login-error" class="login-error">Invalid email or password. Please try again.</div>
@@ -77,23 +77,23 @@
                 <form id="register-form">
                     <div class="form-group">
                         <label for="register-name">Full Name</label>
-                        <input type="text" id="register-name" placeholder="Enter your full name" required>
+                        <input type="text" id="register-name" placeholder="Enter your full name" required autocomplete="name">
                     </div>
                     <div class="form-group">
                         <label for="register-email">Email</label>
-                        <input type="email" id="register-email" placeholder="Enter your email" required>
+                        <input type="email" id="register-email" placeholder="Enter your email" required autocomplete="email">
                     </div>
                     <div class="form-group">
                         <label for="register-password">Password</label>
-                        <input type="password" id="register-password" placeholder="Create a password" required>
+                        <input type="password" id="register-password" placeholder="Create a password" required autocomplete="new-password">
                     </div>
                     <div class="form-group">
                         <label for="register-confirm-password">Confirm Password</label>
-                        <input type="password" id="register-confirm-password" placeholder="Confirm your password" required>
+                        <input type="password" id="register-confirm-password" placeholder="Confirm your password" required autocomplete="new-password">
                     </div>
                     <div class="form-group">
                         <label for="register-role">Role</label>
-                        <select id="register-role" required>
+                        <select id="register-role" required autocomplete="off">
                             <option value="">Select Role</option>
                             <option value="admin">Admin</option>
                             <option value="cashier">Cashier</option>
@@ -169,7 +169,7 @@
                         </div>
                         
                         <div class="search-bar">
-                            <input type="text" id="product-search" placeholder="Search products or scan barcode...">
+                            <input type="text" id="product-search" placeholder="Search products or scan barcode..." autocomplete="off">
                             <button id="search-btn"><i class="fas fa-search"></i></button>
                         </div>
                         
@@ -223,7 +223,7 @@
                     </div>
                     
                     <div class="search-bar">
-                        <input type="text" id="inventory-search" placeholder="Search inventory...">
+                        <input type="text" id="inventory-search" placeholder="Search inventory..." autocomplete="off">
                         <button id="inventory-search-btn"><i class="fas fa-search"></i></button>
                     </div>
                     
@@ -262,7 +262,7 @@
                     <!-- Daily Report Controls -->
                     <div class="daily-report-controls">
                         <label for="report-date">Select Date:</label>
-                        <input type="date" id="report-date" value="">
+                        <input type="date" id="report-date" value="" autocomplete="off">
                         <button id="generate-report-btn">Generate Report</button>
                         <button id="manual-sync-btn" class="btn btn-primary">
                             <i class="fas fa-sync"></i> Sync Now
@@ -408,15 +408,15 @@
                     <form id="change-password-form">
                         <div class="form-group">
                             <label for="current-password">Current Password</label>
-                            <input type="password" id="current-password" required>
+                            <input type="password" id="current-password" required autocomplete="current-password">
                         </div>
                         <div class="form-group">
                             <label for="new-password">New Password</label>
-                            <input type="password" id="new-password" required>
+                            <input type="password" id="new-password" required autocomplete="new-password">
                         </div>
                         <div class="form-group">
                             <label for="confirm-new-password">Confirm New Password</label>
-                            <input type="password" id="confirm-new-password" required>
+                            <input type="password" id="confirm-new-password" required autocomplete="new-password">
                         </div>
                         <button type="submit" class="btn btn-primary" id="change-password-btn">Change Password</button>
                     </form>
@@ -447,11 +447,11 @@
                 <form id="product-form">
                     <div class="form-group">
                         <label for="product-name">Product Name</label>
-                        <input type="text" id="product-name" required>
+                        <input type="text" id="product-name" required autocomplete="off">
                     </div>
                     <div class="form-group">
                         <label for="product-category">Category</label>
-                        <select id="product-category" required>
+                        <select id="product-category" required autocomplete="off">
                             <option value="">Select Category</option>
                             <option value="Food">Food</option>
                             <option value="Beverages">Beverages</option>
@@ -462,19 +462,19 @@
                     </div>
                     <div class="form-group">
                         <label for="product-price">Price (₦)</label>
-                        <input type="number" id="product-price" step="0.01" min="0" required>
+                        <input type="number" id="product-price" step="0.01" min="0" required autocomplete="off">
                     </div>
                     <div class="form-group">
                         <label for="product-stock">Initial Stock</label>
-                        <input type="number" id="product-stock" min="0" required>
+                        <input type="number" id="product-stock" min="0" required autocomplete="off">
                     </div>
                     <div class="form-group">
                         <label for="product-expiry">Expiry Date</label>
-                        <input type="date" id="product-expiry" required>
+                        <input type="date" id="product-expiry" required autocomplete="off">
                     </div>
                     <div class="form-group">
                         <label for="product-barcode">Barcode (Optional)</label>
-                        <input type="text" id="product-barcode">
+                        <input type="text" id="product-barcode" autocomplete="off">
                     </div>
                 </form>
             </div>
