@@ -75,6 +75,21 @@ type OfflineSale = {
   profit: number;
 };
 
+type PendingProductAction =
+  | {
+      id: string;
+      type: "upsert";
+      product: Product;
+      created_at: string;
+    }
+  | {
+      id: string;
+      type: "delete";
+      product: Product;
+      deleted_by_email: string | null;
+      created_at: string;
+    };
+
 type UserRole = "admin" | "cashier";
 
 type DraftProduct = {
@@ -110,6 +125,7 @@ const adminEmails = ["priscillianneoma804@gmail.com"];
 const productsCacheKey = "pagerry-products-cache";
 const salesCacheKey = "pagerry-sales-cache";
 const pendingSalesKey = "pagerry-pending-sales";
+const pendingProductActionsKey = "pagerry-pending-product-actions";
 
 const readStorage = <T,>(key: string, fallback: T): T => {
   if (typeof window === "undefined") return fallback;
@@ -140,6 +156,32 @@ const toLocalDateInputValue = (value: string) => {
   return `${year}-${month}-${day}`;
 };
 
+const applyPendingProductActions = (
+  baseProducts: Product[],
+  actions: PendingProductAction[],
+) => {
+  let nextProducts = [...baseProducts];
+
+  for (const action of actions) {
+    if (action.type === "upsert") {
+      const index = nextProducts.findIndex(
+        (product) => product.id === action.product.id,
+      );
+      if (index >= 0) {
+        nextProducts[index] = action.product;
+      } else {
+        nextProducts = [action.product, ...nextProducts];
+      }
+    } else {
+      nextProducts = nextProducts.filter(
+        (product) => product.id !== action.product.id,
+      );
+    }
+  }
+
+  return nextProducts.filter((product) => product.active);
+};
+
 export default function PosApp() {
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<UserRole>("cashier");
@@ -150,6 +192,9 @@ export default function PosApp() {
   const [products, setProducts] = useState<Product[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [pendingSales, setPendingSales] = useState<OfflineSale[]>([]);
+  const [pendingProductActions, setPendingProductActions] = useState<
+    PendingProductAction[]
+  >([]);
   const [isOnline, setIsOnline] = useState(true);
   const [cart, setCart] = useState<CartLine[]>([]);
   const [lastReceipt, setLastReceipt] = useState<{
@@ -173,12 +218,17 @@ export default function PosApp() {
     const cachedProducts = readStorage<Product[]>(productsCacheKey, []);
     const cachedSales = readStorage<Sale[]>(salesCacheKey, []);
     const cachedPendingSales = readStorage<OfflineSale[]>(pendingSalesKey, []);
-    setProducts(cachedProducts);
+    const cachedProductActions = readStorage<PendingProductAction[]>(
+      pendingProductActionsKey,
+      [],
+    );
+    setProducts(applyPendingProductActions(cachedProducts, cachedProductActions));
     setSales(cachedSales);
     setPendingSales(cachedPendingSales);
+    setPendingProductActions(cachedProductActions);
 
     if (typeof navigator !== "undefined" && !navigator.onLine) {
-      setSyncMessage("Offline mode. Sales will sync when the network returns.");
+      setSyncMessage("Offline mode. Changes will sync when the network returns.");
       return;
     }
 
@@ -201,7 +251,7 @@ export default function PosApp() {
     } else {
       const remoteProducts = productsResult.data ?? [];
       const remoteSales = salesResult.data ?? [];
-      setProducts(remoteProducts);
+      setProducts(applyPendingProductActions(remoteProducts, cachedProductActions));
       setSales(remoteSales);
       writeStorage(productsCacheKey, remoteProducts);
       writeStorage(salesCacheKey, remoteSales);
@@ -213,9 +263,15 @@ export default function PosApp() {
   useEffect(() => {
     const initializeSession = async () => {
       setIsOnline(typeof navigator === "undefined" ? true : navigator.onLine);
-      setProducts(readStorage<Product[]>(productsCacheKey, []));
+      const cachedProducts = readStorage<Product[]>(productsCacheKey, []);
+      const cachedProductActions = readStorage<PendingProductAction[]>(
+        pendingProductActionsKey,
+        [],
+      );
+      setProducts(applyPendingProductActions(cachedProducts, cachedProductActions));
       setSales(readStorage<Sale[]>(salesCacheKey, []));
       setPendingSales(readStorage<OfflineSale[]>(pendingSalesKey, []));
+      setPendingProductActions(cachedProductActions);
       const { data } = await supabase.auth.getSession();
       setUser(data.session?.user ?? null);
       setSessionChecked(true);
@@ -237,12 +293,90 @@ export default function PosApp() {
     return () => subscription.unsubscribe();
   }, []);
 
-  const syncPendingSales = async () => {
+  const queueProductAction = (action: PendingProductAction) => {
+    const queue = readStorage<PendingProductAction[]>(pendingProductActionsKey, []);
+    const nextQueue = [
+      ...queue.filter(
+        (queued) => queued.product.id !== action.product.id,
+      ),
+      action,
+    ];
+    const cachedProducts = readStorage<Product[]>(productsCacheKey, []);
+    const nextProducts = applyPendingProductActions(cachedProducts, nextQueue);
+
+    writeStorage(pendingProductActionsKey, nextQueue);
+    setPendingProductActions(nextQueue);
+    setProducts(nextProducts);
+    setSyncMessage(
+      `${nextQueue.length} inventory change${nextQueue.length === 1 ? "" : "s"} waiting to sync.`,
+    );
+  };
+
+  const syncPendingProductActions = async () => {
+    const queue = readStorage<PendingProductAction[]>(pendingProductActionsKey, []);
+    if (!user || !queue.length) return true;
+    if (typeof navigator !== "undefined" && !navigator.onLine) return false;
+
+    setSyncMessage(
+      `Syncing ${queue.length} inventory change${queue.length === 1 ? "" : "s"}...`,
+    );
+    const remaining: PendingProductAction[] = [];
+
+    for (const action of queue) {
+      if (action.type === "upsert") {
+        const { error } = await supabase.from("products").upsert(action.product);
+        if (error) remaining.push(action);
+      } else {
+        const { error: archiveError } = await supabase
+          .from("deleted_products")
+          .insert({
+            product_id: action.product.id,
+            name: action.product.name,
+            sku: action.product.sku,
+            category: action.product.category,
+            unit: action.product.unit,
+            stock_quantity: action.product.stock_quantity,
+            low_stock_threshold: action.product.low_stock_threshold,
+            cost_price: action.product.cost_price,
+            sale_price: action.product.sale_price,
+            deleted_by_email: action.deleted_by_email,
+          });
+        const { error: updateError } = archiveError
+          ? { error: archiveError }
+          : await supabase
+              .from("products")
+              .update({ active: false })
+              .eq("id", action.product.id);
+        if (updateError) remaining.push(action);
+      }
+    }
+
+    writeStorage(pendingProductActionsKey, remaining);
+    setPendingProductActions(remaining);
+
+    if (remaining.length) {
+      setSyncMessage(
+        `${remaining.length} inventory change${remaining.length === 1 ? "" : "s"} still pending.`,
+      );
+      return false;
+    }
+
+    return true;
+  };
+
+  const syncPendingSales = async (skipBusyGuard = false) => {
     const queue = readStorage<OfflineSale[]>(pendingSalesKey, []);
-    if (!user || !queue.length || isSyncing) return;
+    if (!user || !queue.length) return;
+    if (!skipBusyGuard && isSyncing) return;
     if (typeof navigator !== "undefined" && !navigator.onLine) return;
 
-    setIsSyncing(true);
+    if (!skipBusyGuard) setIsSyncing(true);
+    const productsSynced = await syncPendingProductActions();
+    if (!productsSynced) {
+      if (!skipBusyGuard) setIsSyncing(false);
+      return;
+    }
+
     setSyncMessage(`Syncing ${queue.length} pending sale${queue.length === 1 ? "" : "s"}...`);
     const remaining: OfflineSale[] = [];
 
@@ -271,17 +405,28 @@ export default function PosApp() {
       setSyncMessage("All offline sales synced.");
       await loadData();
     }
+    if (!skipBusyGuard) setIsSyncing(false);
+  };
+
+  const syncAllPending = async () => {
+    if (!user || isSyncing) return;
+    if (typeof navigator !== "undefined" && !navigator.onLine) return;
+    setIsSyncing(true);
+    const productsSynced = await syncPendingProductActions();
+    if (productsSynced) {
+      await syncPendingSales(true);
+    }
     setIsSyncing(false);
   };
 
   useEffect(() => {
     const goOnline = () => {
       setIsOnline(true);
-      void syncPendingSales();
+      void syncAllPending();
     };
     const goOffline = () => {
       setIsOnline(false);
-      setSyncMessage("Offline mode. Sales will sync when the network returns.");
+      setSyncMessage("Offline mode. Changes will sync when the network returns.");
     };
 
     window.addEventListener("online", goOnline);
@@ -309,6 +454,9 @@ export default function PosApp() {
     } else {
       setRole("cashier");
       setPendingSales(readStorage<OfflineSale[]>(pendingSalesKey, []));
+      setPendingProductActions(
+        readStorage<PendingProductAction[]>(pendingProductActionsKey, []),
+      );
     }
   }, [user]);
 
@@ -478,10 +626,22 @@ export default function PosApp() {
             }
           : product;
       });
+      const cachedProducts = readStorage<Product[]>(productsCacheKey, []);
+      const nextCachedProducts = cachedProducts.map((product) => {
+        const sold = offlineSale.items.find((item) => item.product_id === product.id);
+        return sold
+          ? {
+              ...product,
+              stock_quantity: Number(
+                Math.max(product.stock_quantity - sold.quantity, 0).toFixed(2),
+              ),
+            }
+          : product;
+      });
       const nextSales = [localSale, ...sales].slice(0, 500);
 
       writeStorage(pendingSalesKey, nextQueue);
-      writeStorage(productsCacheKey, nextProducts);
+      writeStorage(productsCacheKey, nextCachedProducts.length ? nextCachedProducts : nextProducts);
       writeStorage(salesCacheKey, nextSales);
       setPendingSales(nextQueue);
       setProducts(nextProducts);
@@ -546,7 +706,8 @@ export default function PosApp() {
     event.preventDefault();
     if (!isAdmin) return;
     setIsBusy(true);
-    const payload = {
+    const product: Product = {
+      id: editing?.id ?? crypto.randomUUID(),
       name: draft.name.trim(),
       sku: draft.sku.trim() || null,
       category: draft.category.trim() || null,
@@ -557,16 +718,41 @@ export default function PosApp() {
       sale_price: Number(draft.sale_price),
       active: true,
     };
-
-    const result = editing
-      ? await supabase.from("products").update(payload).eq("id", editing.id)
-      : await supabase.from("products").insert(payload);
-
-    if (result.error) {
-      console.error(result.error.message);
-    } else {
+    const cachedProducts = readStorage<Product[]>(productsCacheKey, []);
+    const nextCachedProducts = [
+      product,
+      ...cachedProducts.filter((item) => item.id !== product.id),
+    ];
+    const action: PendingProductAction = {
+      id: crypto.randomUUID(),
+      type: "upsert",
+      product,
+      created_at: new Date().toISOString(),
+    };
+    const applyLocalSave = () => {
+      writeStorage(productsCacheKey, nextCachedProducts);
+      setProducts((current) => [
+        product,
+        ...current.filter((item) => item.id !== product.id),
+      ]);
       setDraft(emptyProduct);
       setEditing(null);
+    };
+
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      applyLocalSave();
+      queueProductAction(action);
+      setIsBusy(false);
+      return;
+    }
+
+    const result = await supabase.from("products").upsert(product);
+
+    if (result.error) {
+      applyLocalSave();
+      queueProductAction(action);
+    } else {
+      applyLocalSave();
       await loadData();
     }
     setIsBusy(false);
@@ -588,15 +774,44 @@ export default function PosApp() {
 
   const adjustStock = async (product: Product, delta: number) => {
     if (!isAdmin) return;
-    const nextQuantity = Math.max(product.stock_quantity + delta, 0);
+    const updatedProduct = {
+      ...product,
+      stock_quantity: Number(
+        Math.max(product.stock_quantity + delta, 0).toFixed(2),
+      ),
+    };
     setIsBusy(true);
-    const { error } = await supabase
-      .from("products")
-      .update({ stock_quantity: nextQuantity })
-      .eq("id", product.id);
+    const action: PendingProductAction = {
+      id: crypto.randomUUID(),
+      type: "upsert",
+      product: updatedProduct,
+      created_at: new Date().toISOString(),
+    };
+    const cachedProducts = readStorage<Product[]>(productsCacheKey, []);
+    const nextCachedProducts = [
+      updatedProduct,
+      ...cachedProducts.filter((item) => item.id !== product.id),
+    ];
+    const applyLocalStock = () => {
+      writeStorage(productsCacheKey, nextCachedProducts);
+      setProducts((current) =>
+        current.map((item) => (item.id === product.id ? updatedProduct : item)),
+      );
+    };
+
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      applyLocalStock();
+      queueProductAction(action);
+      setIsBusy(false);
+      return;
+    }
+
+    const { error } = await supabase.from("products").upsert(updatedProduct);
     if (error) {
-      console.error(error.message);
+      applyLocalStock();
+      queueProductAction(action);
     } else {
+      applyLocalStock();
       await loadData();
     }
     setIsBusy(false);
@@ -605,6 +820,31 @@ export default function PosApp() {
   const deleteProduct = async (product: Product) => {
     if (!isAdmin || !user) return;
     setIsBusy(true);
+    const action: PendingProductAction = {
+      id: crypto.randomUUID(),
+      type: "delete",
+      product,
+      deleted_by_email: user.email ?? null,
+      created_at: new Date().toISOString(),
+    };
+    const applyLocalDelete = () => {
+      const cachedProducts = readStorage<Product[]>(productsCacheKey, []);
+      const nextCachedProducts = cachedProducts.filter(
+        (item) => item.id !== product.id,
+      );
+      writeStorage(productsCacheKey, nextCachedProducts);
+      setProducts((current) => current.filter((item) => item.id !== product.id));
+      setCart((current) =>
+        current.filter((line) => line.product.id !== product.id),
+      );
+    };
+
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      applyLocalDelete();
+      queueProductAction(action);
+      setIsBusy(false);
+      return;
+    }
 
     const { error: archiveError } = await supabase.from("deleted_products").insert({
       product_id: product.id,
@@ -624,11 +864,10 @@ export default function PosApp() {
       : await supabase.from("products").update({ active: false }).eq("id", product.id);
 
     if (updateError) {
-      console.error(updateError.message);
+      applyLocalDelete();
+      queueProductAction(action);
     } else {
-      setCart((current) =>
-        current.filter((line) => line.product.id !== product.id),
-      );
+      applyLocalDelete();
       await loadData();
     }
     setIsBusy(false);
@@ -773,7 +1012,7 @@ export default function PosApp() {
           </div>
           <div className="side-metric">
             <small>{isOnline ? "Online" : "Offline"}</small>
-            <strong>{pendingSales.length} pending</strong>
+            <strong>{pendingSales.length + pendingProductActions.length} pending</strong>
           </div>
         </div>
       </aside>
@@ -790,7 +1029,7 @@ export default function PosApp() {
           <button
             className="icon-button"
             onClick={() => {
-              void syncPendingSales();
+              void syncAllPending();
               void loadData();
             }}
             disabled={isBusy || isSyncing}
@@ -814,7 +1053,7 @@ export default function PosApp() {
         <article className="metric sync-metric">
           <RefreshCw size={18} aria-hidden="true" />
           <span>{isOnline ? "Online" : "Offline"}</span>
-          <strong>{pendingSales.length} pending</strong>
+          <strong>{pendingSales.length + pendingProductActions.length} pending</strong>
         </article>
         {dashboard.map((item) => (
           <article className="metric" key={item.label}>
