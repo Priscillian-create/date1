@@ -729,17 +729,61 @@ export default function PosApp() {
   }
 
   return (
-    <main className="shell">
-      <header className="topbar">
-        <div className="brand-lockup">
-          <div className="brand-mark">
-            <Beef size={24} aria-hidden="true" />
+    <main className="shell app-shell">
+      <aside className="sidebar">
+        <div className="sidebar-brand">
+          <div className="brand-mark sidebar-mark">
+            PG
           </div>
           <div>
             <h1>Pagerry Froozens</h1>
-            <p>Point of sale, inventory control, and profit check</p>
+            <span>Point of Sale</span>
           </div>
         </div>
+
+        <nav className="sidebar-nav">
+          <a className="active" href="#sales-pos">
+            <ShoppingCart size={18} aria-hidden="true" />
+            <span>Sales POS</span>
+          </a>
+          {isAdmin ? (
+            <a href="#inventory">
+              <ClipboardList size={18} aria-hidden="true" />
+              <span>Inventory</span>
+            </a>
+          ) : null}
+          <a href="#sales-history">
+            <BarChart3 size={18} aria-hidden="true" />
+            <span>Sales History</span>
+          </a>
+          <a href="#receipt">
+            <Coins size={18} aria-hidden="true" />
+            <span>Receipt</span>
+          </a>
+        </nav>
+
+        <div className="side-metrics">
+          <div className="side-metric">
+            <small>Today Sales</small>
+            <strong>{dashboard[0].value}</strong>
+          </div>
+          <div className="side-metric">
+            <small>Today Profit</small>
+            <strong>{dashboard[1].value}</strong>
+          </div>
+          <div className="side-metric">
+            <small>{isOnline ? "Online" : "Offline"}</small>
+            <strong>{pendingSales.length} pending</strong>
+          </div>
+        </div>
+      </aside>
+
+      <div className="app-main">
+        <header className="topbar">
+          <div>
+            <h1>Sales POS</h1>
+            <p>Point of sale, inventory control, and profit check</p>
+          </div>
           <div className="top-actions">
           <strong className="role-badge">{isAdmin ? "Admin" : "Cashier"}</strong>
           <span>{user.email}</span>
@@ -765,6 +809,7 @@ export default function PosApp() {
         </div>
       </header>
 
+      <div className="content">
       <section className="dashboard">
         <article className="metric sync-metric">
           <RefreshCw size={18} aria-hidden="true" />
@@ -782,7 +827,7 @@ export default function PosApp() {
 
       {syncMessage ? <p className="sync-message">{syncMessage}</p> : null}
 
-      <section className="workspace">
+      <section className="workspace" id="sales-pos">
         <div className="panel product-panel">
           <div className="panel-header">
             <div>
@@ -929,7 +974,7 @@ export default function PosApp() {
       </section>
 
       {lastReceipt ? (
-        <section className="receipt-print">
+        <section className="receipt-print" id="receipt">
           <div className="panel receipt-panel">
             <div className="panel-header compact">
               <div>
@@ -995,7 +1040,7 @@ export default function PosApp() {
       ) : null}
 
       {isAdmin ? (
-      <section className="management">
+      <section className="management" id="inventory">
         <form className="panel product-form" onSubmit={saveProduct}>
           <div className="panel-header compact">
             <h2>{editing ? "Edit product" : "Add product"}</h2>
@@ -1176,7 +1221,7 @@ export default function PosApp() {
       </section>
       ) : null}
 
-      <section className="history">
+      <section className="history" id="sales-history">
         <div className="panel">
           <div className="panel-header history-header">
             <div>
@@ -1226,6 +1271,8 @@ export default function PosApp() {
           </div>
         </div>
       </section>
+      </div>
+      </div>
     </main>
   );
 }
