@@ -74,6 +74,8 @@ update auth.users
 set raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb) || '{"role":"admin"}'::jsonb
 where lower(email) = 'priscillianneoma804@gmail.com';
 
+drop function if exists public.checkout_sale(text, jsonb);
+
 create or replace function public.is_admin()
 returns boolean
 language sql

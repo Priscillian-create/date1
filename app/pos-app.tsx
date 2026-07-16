@@ -41,11 +41,38 @@ type Sale = {
   profit: number;
   payment_method: string;
   created_at: string;
+  sync_status?: "synced" | "pending" | "failed";
+};
+
+type SaleItem = {
+  id: string;
+  sale_id: string;
+  product_name: string;
+  quantity: number;
+  unit_price: number;
+  line_total: number;
 };
 
 type CartLine = {
   product: Product;
   quantity: number;
+};
+
+type OfflineSale = {
+  id: string;
+  receipt_no: string;
+  payment_method: string;
+  created_at: string;
+  items: Array<{
+    product_id: string;
+    product_name: string;
+    quantity: number;
+    unit_price: number;
+    unit_cost: number;
+  }>;
+  total: number;
+  cost_total: number;
+  profit: number;
 };
 
 type UserRole = "admin" | "cashier";
@@ -80,6 +107,38 @@ const money = new Intl.NumberFormat("en-NG", {
 
 const supabase = createClient();
 const adminEmails = ["priscillianneoma804@gmail.com"];
+const productsCacheKey = "pagerry-products-cache";
+const salesCacheKey = "pagerry-sales-cache";
+const pendingSalesKey = "pagerry-pending-sales";
+
+const readStorage = <T,>(key: string, fallback: T): T => {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const value = window.localStorage.getItem(key);
+    return value ? (JSON.parse(value) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+const writeStorage = (key: string, value: unknown) => {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(key, JSON.stringify(value));
+};
+
+const makeOfflineReceiptNo = () =>
+  `PGF-OFF-${new Date().toISOString().replace(/\D/g, "").slice(0, 14)}-${Math.random()
+    .toString(36)
+    .slice(2, 6)
+    .toUpperCase()}`;
+
+const toLocalDateInputValue = (value: string) => {
+  const date = new Date(value);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
 
 export default function PosApp() {
   const [user, setUser] = useState<User | null>(null);
@@ -90,17 +149,39 @@ export default function PosApp() {
   const [authMessage, setAuthMessage] = useState("");
   const [products, setProducts] = useState<Product[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
+  const [pendingSales, setPendingSales] = useState<OfflineSale[]>([]);
+  const [isOnline, setIsOnline] = useState(true);
   const [cart, setCart] = useState<CartLine[]>([]);
+  const [lastReceipt, setLastReceipt] = useState<{
+    sale: Sale;
+    items: SaleItem[];
+  } | null>(null);
   const [query, setQuery] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("cash");
+  const [selectedSalesDate, setSelectedSalesDate] = useState("");
+  const [checkoutMessage, setCheckoutMessage] = useState("");
   const [draft, setDraft] = useState<DraftProduct>(emptyProduct);
   const [editing, setEditing] = useState<Product | null>(null);
   const [isBusy, setIsBusy] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState("");
   const isAdmin =
     role === "admin" || adminEmails.includes(user?.email?.toLowerCase() ?? "");
 
   const loadData = async () => {
     if (!user) return;
+    const cachedProducts = readStorage<Product[]>(productsCacheKey, []);
+    const cachedSales = readStorage<Sale[]>(salesCacheKey, []);
+    const cachedPendingSales = readStorage<OfflineSale[]>(pendingSalesKey, []);
+    setProducts(cachedProducts);
+    setSales(cachedSales);
+    setPendingSales(cachedPendingSales);
+
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      setSyncMessage("Offline mode. Sales will sync when the network returns.");
+      return;
+    }
+
     setIsBusy(true);
     const [productsResult, salesResult] = await Promise.all([
       supabase
@@ -112,27 +193,39 @@ export default function PosApp() {
         .from("sales")
         .select("*")
         .order("created_at", { ascending: false })
-        .limit(25),
+        .limit(500),
     ]);
 
     if (productsResult.error || salesResult.error) {
-      setProducts([]);
-      setSales([]);
+      setSyncMessage("Using saved offline data. Could not refresh from Supabase.");
     } else {
-      setProducts(productsResult.data ?? []);
-      setSales(salesResult.data ?? []);
+      const remoteProducts = productsResult.data ?? [];
+      const remoteSales = salesResult.data ?? [];
+      setProducts(remoteProducts);
+      setSales(remoteSales);
+      writeStorage(productsCacheKey, remoteProducts);
+      writeStorage(salesCacheKey, remoteSales);
+      setSyncMessage("");
     }
     setIsBusy(false);
   };
 
   useEffect(() => {
     const initializeSession = async () => {
+      setIsOnline(typeof navigator === "undefined" ? true : navigator.onLine);
+      setProducts(readStorage<Product[]>(productsCacheKey, []));
+      setSales(readStorage<Sale[]>(salesCacheKey, []));
+      setPendingSales(readStorage<OfflineSale[]>(pendingSalesKey, []));
       const { data } = await supabase.auth.getSession();
       setUser(data.session?.user ?? null);
       setSessionChecked(true);
     };
 
     void initializeSession();
+
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+    }
 
     const {
       data: { subscription },
@@ -143,6 +236,62 @@ export default function PosApp() {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  const syncPendingSales = async () => {
+    const queue = readStorage<OfflineSale[]>(pendingSalesKey, []);
+    if (!user || !queue.length || isSyncing) return;
+    if (typeof navigator !== "undefined" && !navigator.onLine) return;
+
+    setIsSyncing(true);
+    setSyncMessage(`Syncing ${queue.length} pending sale${queue.length === 1 ? "" : "s"}...`);
+    const remaining: OfflineSale[] = [];
+
+    for (const sale of queue) {
+      const { error } = await supabase.rpc("checkout_sale", {
+        payment_method_input: sale.payment_method,
+        items_input: sale.items.map((item) => ({
+          product_id: item.product_id,
+          quantity: Number(item.quantity.toFixed(2)),
+        })),
+      });
+
+      if (error) {
+        remaining.push(sale);
+      }
+    }
+
+    writeStorage(pendingSalesKey, remaining);
+    setPendingSales(remaining);
+
+    if (remaining.length) {
+      setSyncMessage(
+        `${remaining.length} sale${remaining.length === 1 ? "" : "s"} still pending. Check stock or connection.`,
+      );
+    } else {
+      setSyncMessage("All offline sales synced.");
+      await loadData();
+    }
+    setIsSyncing(false);
+  };
+
+  useEffect(() => {
+    const goOnline = () => {
+      setIsOnline(true);
+      void syncPendingSales();
+    };
+    const goOffline = () => {
+      setIsOnline(false);
+      setSyncMessage("Offline mode. Sales will sync when the network returns.");
+    };
+
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+
+    return () => {
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+    };
+  }, [user]);
 
   useEffect(() => {
     if (user) {
@@ -159,8 +308,7 @@ export default function PosApp() {
       void loadData();
     } else {
       setRole("cashier");
-      setProducts([]);
-      setSales([]);
+      setPendingSales(readStorage<OfflineSale[]>(pendingSalesKey, []));
     }
   }, [user]);
 
@@ -225,6 +373,21 @@ export default function PosApp() {
     [products],
   );
 
+  const visibleSales = useMemo(() => {
+    if (!selectedSalesDate) return sales;
+    return sales.filter((sale) => {
+      return toLocalDateInputValue(sale.created_at) === selectedSalesDate;
+    });
+  }, [sales, selectedSalesDate]);
+
+  const visibleSalesTotals = useMemo(
+    () => ({
+      total: visibleSales.reduce((sum, sale) => sum + sale.total, 0),
+      profit: visibleSales.reduce((sum, sale) => sum + sale.profit, 0),
+    }),
+    [visibleSales],
+  );
+
   const addToCart = (product: Product) => {
     if (product.stock_quantity <= 0) {
       return;
@@ -265,18 +428,114 @@ export default function PosApp() {
   const checkout = async () => {
     if (!cart.length) return;
     setIsBusy(true);
+    setCheckoutMessage("");
 
-    const { error } = await supabase.rpc("checkout_sale", {
+    const offlineSale: OfflineSale = {
+      id: crypto.randomUUID(),
+      receipt_no: makeOfflineReceiptNo(),
+      payment_method: paymentMethod,
+      created_at: new Date().toISOString(),
+      items: cart.map((line) => ({
+        product_id: line.product.id,
+        product_name: line.product.name,
+        quantity: Number(line.quantity.toFixed(2)),
+        unit_price: line.product.sale_price,
+        unit_cost: line.product.cost_price,
+      })),
+      total: totals.total,
+      cost_total: totals.cost,
+      profit: totals.profit,
+    };
+
+    const completeOfflineSale = () => {
+      const nextQueue = [...readStorage<OfflineSale[]>(pendingSalesKey, []), offlineSale];
+      const localSale: Sale = {
+        id: offlineSale.id,
+        receipt_no: offlineSale.receipt_no,
+        total: offlineSale.total,
+        cost_total: offlineSale.cost_total,
+        profit: offlineSale.profit,
+        payment_method: offlineSale.payment_method,
+        created_at: offlineSale.created_at,
+        sync_status: "pending",
+      };
+      const localItems: SaleItem[] = offlineSale.items.map((item) => ({
+        id: crypto.randomUUID(),
+        sale_id: offlineSale.id,
+        product_name: item.product_name,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        line_total: item.quantity * item.unit_price,
+      }));
+      const nextProducts = products.map((product) => {
+        const sold = offlineSale.items.find((item) => item.product_id === product.id);
+        return sold
+          ? {
+              ...product,
+              stock_quantity: Number(
+                Math.max(product.stock_quantity - sold.quantity, 0).toFixed(2),
+              ),
+            }
+          : product;
+      });
+      const nextSales = [localSale, ...sales].slice(0, 500);
+
+      writeStorage(pendingSalesKey, nextQueue);
+      writeStorage(productsCacheKey, nextProducts);
+      writeStorage(salesCacheKey, nextSales);
+      setPendingSales(nextQueue);
+      setProducts(nextProducts);
+      setSales(nextSales);
+      setLastReceipt({ sale: localSale, items: localItems });
+      setCart([]);
+      setCheckoutMessage("Sale saved offline. It will sync when online.");
+      setSyncMessage(`${nextQueue.length} pending sale${nextQueue.length === 1 ? "" : "s"} waiting to sync.`);
+    };
+
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      completeOfflineSale();
+      setIsBusy(false);
+      return;
+    }
+
+    const { data: saleId, error } = await supabase.rpc("checkout_sale", {
       payment_method_input: paymentMethod,
       items_input: cart.map((line) => ({
         product_id: line.product.id,
-        quantity: line.quantity,
+        quantity: Number(line.quantity.toFixed(2)),
       })),
     });
 
     if (error) {
-      console.error(error.message);
+      const networkFailure =
+        error.message.toLowerCase().includes("failed to fetch") ||
+        error.message.toLowerCase().includes("network") ||
+        error.message.toLowerCase().includes("fetch");
+
+      if (networkFailure) {
+        completeOfflineSale();
+      } else {
+        setCheckoutMessage(error.message);
+      }
     } else {
+      const [saleResult, itemsResult] = await Promise.all([
+        supabase.from("sales").select("*").eq("id", saleId).single(),
+        supabase
+          .from("sale_items")
+          .select("*")
+          .eq("sale_id", saleId)
+          .order("created_at", { ascending: true }),
+      ]);
+
+      if (saleResult.error || itemsResult.error) {
+        setCheckoutMessage("Sale completed, but receipt could not be loaded.");
+      } else {
+        setLastReceipt({
+          sale: saleResult.data,
+          items: itemsResult.data ?? [],
+        });
+        setCheckoutMessage("Sale completed.");
+      }
       setCart([]);
       await loadData();
     }
@@ -486,9 +745,12 @@ export default function PosApp() {
           <span>{user.email}</span>
           <button
             className="icon-button"
-            onClick={loadData}
-            disabled={isBusy}
-            title="Refresh"
+            onClick={() => {
+              void syncPendingSales();
+              void loadData();
+            }}
+            disabled={isBusy || isSyncing}
+            title="Sync and refresh"
           >
             <RefreshCw size={18} aria-hidden="true" />
           </button>
@@ -504,6 +766,11 @@ export default function PosApp() {
       </header>
 
       <section className="dashboard">
+        <article className="metric sync-metric">
+          <RefreshCw size={18} aria-hidden="true" />
+          <span>{isOnline ? "Online" : "Offline"}</span>
+          <strong>{pendingSales.length} pending</strong>
+        </article>
         {dashboard.map((item) => (
           <article className="metric" key={item.label}>
             <item.icon size={18} aria-hidden="true" />
@@ -512,6 +779,8 @@ export default function PosApp() {
           </article>
         ))}
       </section>
+
+      {syncMessage ? <p className="sync-message">{syncMessage}</p> : null}
 
       <section className="workspace">
         <div className="panel product-panel">
@@ -653,8 +922,77 @@ export default function PosApp() {
             <Check size={18} aria-hidden="true" />
             Complete sale
           </button>
+          {checkoutMessage ? (
+            <p className="checkout-message">{checkoutMessage}</p>
+          ) : null}
         </aside>
       </section>
+
+      {lastReceipt ? (
+        <section className="receipt-print">
+          <div className="panel receipt-panel">
+            <div className="panel-header compact">
+              <div>
+                <h2>Receipt</h2>
+                <span>{lastReceipt.sale.receipt_no}</span>
+              </div>
+              <button className="secondary-action" onClick={() => window.print()}>
+                Print
+              </button>
+            </div>
+            <div className="receipt-paper">
+              <div className="receipt-brand">
+                <div className="receipt-logo">
+                  <Beef size={22} aria-hidden="true" />
+                </div>
+                <div>
+                  <h3>Pagerry Froozens</h3>
+                  <p>Frozen foods, neatly packed and ready.</p>
+                </div>
+              </div>
+
+              <div className="receipt-meta">
+                <div>
+                  <span>Receipt No.</span>
+                  <strong>{lastReceipt.sale.receipt_no}</strong>
+                </div>
+                <div>
+                  <span>Date</span>
+                  <strong>{new Date(lastReceipt.sale.created_at).toLocaleString()}</strong>
+                </div>
+              </div>
+
+              <div className="receipt-items">
+                {lastReceipt.items.map((item) => (
+                  <div key={item.id}>
+                    <span>{item.product_name}</span>
+                    <small>
+                      {item.quantity} x {money.format(item.unit_price)}
+                    </small>
+                    <strong>{money.format(item.line_total)}</strong>
+                  </div>
+                ))}
+              </div>
+
+              <div className="receipt-total-line">
+                <span>Total</span>
+                <strong>{money.format(lastReceipt.sale.total)}</strong>
+              </div>
+              <div className="receipt-total-line">
+                <span>Payment</span>
+                <strong>{lastReceipt.sale.payment_method}</strong>
+              </div>
+              <div className="receipt-footer">
+                <strong>Thank you for shopping with us.</strong>
+                <span>
+                  Order on WhatsApp: 08141606223 and have it delivered to your
+                  doorstep.
+                </span>
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       {isAdmin ? (
       <section className="management">
@@ -840,16 +1178,40 @@ export default function PosApp() {
 
       <section className="history">
         <div className="panel">
-          <div className="panel-header compact">
-            <h2>Recent sales</h2>
-            <span>{sales.length} receipts</span>
+          <div className="panel-header history-header">
+            <div>
+              <h2>Sales history</h2>
+              <span>
+                {visibleSales.length} receipt{visibleSales.length === 1 ? "" : "s"} /
+                Sales {money.format(visibleSalesTotals.total)} / Profit{" "}
+                {money.format(visibleSalesTotals.profit)}
+              </span>
+            </div>
+            <div className="date-filter">
+              <label>
+                Date
+                <input
+                  type="date"
+                  value={selectedSalesDate}
+                  onChange={(event) => setSelectedSalesDate(event.target.value)}
+                />
+              </label>
+              <button
+                className="secondary-action"
+                type="button"
+                onClick={() => setSelectedSalesDate("")}
+              >
+                All dates
+              </button>
+            </div>
           </div>
           <div className="history-list">
-            {sales.map((sale) => (
+            {visibleSales.map((sale) => (
               <article className="receipt" key={sale.id}>
                 <div>
                   <strong>{sale.receipt_no}</strong>
                   <span>{new Date(sale.created_at).toLocaleString()}</span>
+                  {sale.sync_status === "pending" ? <em>Pending sync</em> : null}
                 </div>
                 <div>
                   <span>{sale.payment_method}</span>
