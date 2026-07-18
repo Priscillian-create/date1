@@ -1,5 +1,5 @@
-const CACHE_NAME = "pagerry-froozens-pos-v1";
-const APP_SHELL = ["/", "/icon.svg"];
+const CACHE_NAME = "pagerrys-cold-room-pos-v2";
+const APP_SHELL = ["/", "/icon.svg", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

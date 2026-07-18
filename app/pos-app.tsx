@@ -7,6 +7,7 @@ import {
   Check,
   ClipboardList,
   Coins,
+  Download,
   LogOut,
   Minus,
   PackagePlus,
@@ -91,6 +92,12 @@ type PendingProductAction =
     };
 
 type UserRole = "admin" | "cashier";
+type AppView = "pos" | "inventory" | "reports" | "receipt";
+
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
+};
 
 type DraftProduct = {
   name: string;
@@ -204,11 +211,15 @@ export default function PosApp() {
   const [query, setQuery] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [selectedSalesDate, setSelectedSalesDate] = useState("");
+  const [activeView, setActiveView] = useState<AppView>("pos");
   const [checkoutMessage, setCheckoutMessage] = useState("");
   const [draft, setDraft] = useState<DraftProduct>(emptyProduct);
   const [editing, setEditing] = useState<Product | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [installPrompt, setInstallPrompt] =
+    useState<BeforeInstallPromptEvent | null>(null);
+  const [isInstalled, setIsInstalled] = useState(false);
   const [syncMessage, setSyncMessage] = useState("");
   const isAdmin =
     role === "admin" || adminEmails.includes(user?.email?.toLowerCase() ?? "");
@@ -283,6 +294,18 @@ export default function PosApp() {
       navigator.serviceWorker.register("/sw.js").catch(() => undefined);
     }
 
+    const handleInstallPrompt = (event: Event) => {
+      event.preventDefault();
+      setInstallPrompt(event as BeforeInstallPromptEvent);
+    };
+    const handleInstalled = () => {
+      setIsInstalled(true);
+      setInstallPrompt(null);
+    };
+
+    window.addEventListener("beforeinstallprompt", handleInstallPrompt);
+    window.addEventListener("appinstalled", handleInstalled);
+
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -290,8 +313,28 @@ export default function PosApp() {
       setCart([]);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+      window.removeEventListener("beforeinstallprompt", handleInstallPrompt);
+      window.removeEventListener("appinstalled", handleInstalled);
+    };
   }, []);
+
+  const installApp = async () => {
+    if (!installPrompt) {
+      setSyncMessage(
+        "Install will appear after the browser confirms this app is ready. On mobile, use Add to Home Screen.",
+      );
+      return;
+    }
+
+    await installPrompt.prompt();
+    const choice = await installPrompt.userChoice;
+    if (choice.outcome === "accepted") {
+      setIsInstalled(true);
+    }
+    setInstallPrompt(null);
+  };
 
   const queueProductAction = (action: PendingProductAction) => {
     const queue = readStorage<PendingProductAction[]>(pendingProductActionsKey, []);
@@ -533,6 +576,26 @@ export default function PosApp() {
       total: visibleSales.reduce((sum, sale) => sum + sale.total, 0),
       profit: visibleSales.reduce((sum, sale) => sum + sale.profit, 0),
     }),
+    [visibleSales],
+  );
+
+  const visiblePaymentTotals = useMemo(
+    () =>
+      visibleSales.reduce(
+        (totalsByPayment, sale) => {
+          const method = sale.payment_method.toLowerCase();
+          if (method.includes("cash")) totalsByPayment.cash += sale.total;
+          else if (method.includes("pos") || method.includes("card")) {
+            totalsByPayment.pos += sale.total;
+          } else if (method.includes("transfer")) {
+            totalsByPayment.transfer += sale.total;
+          } else if (method.includes("credit")) {
+            totalsByPayment.credit += sale.total;
+          }
+          return totalsByPayment;
+        },
+        { cash: 0, pos: 0, transfer: 0, credit: 0 },
+      ),
     [visibleSales],
   );
 
@@ -900,6 +963,24 @@ export default function PosApp() {
       icon: AlertTriangle,
     },
   ];
+  const viewText: Record<AppView, { title: string; subtitle: string }> = {
+    pos: {
+      title: "Sales POS",
+      subtitle: "Sell frozen items, track stock, and print receipts.",
+    },
+    inventory: {
+      title: "Inventory",
+      subtitle: "Add products, adjust stock, and manage prices.",
+    },
+    reports: {
+      title: "Reports",
+      subtitle: "Review sales, payment totals, profit, and history.",
+    },
+    receipt: {
+      title: "Receipt",
+      subtitle: "Preview and print the latest customer receipt.",
+    },
+  };
 
   if (!sessionChecked) {
     return (
@@ -981,24 +1062,36 @@ export default function PosApp() {
         </div>
 
         <nav className="sidebar-nav">
-          <a className="active" href="#sales-pos">
+          <button
+            className={activeView === "pos" ? "active" : ""}
+            onClick={() => setActiveView("pos")}
+          >
             <ShoppingCart size={18} aria-hidden="true" />
             <span>Sales POS</span>
-          </a>
+          </button>
           {isAdmin ? (
-            <a href="#inventory">
+            <button
+              className={activeView === "inventory" ? "active" : ""}
+              onClick={() => setActiveView("inventory")}
+            >
               <ClipboardList size={18} aria-hidden="true" />
               <span>Inventory</span>
-            </a>
+            </button>
           ) : null}
-          <a href="#sales-history">
+          <button
+            className={activeView === "reports" ? "active" : ""}
+            onClick={() => setActiveView("reports")}
+          >
             <BarChart3 size={18} aria-hidden="true" />
-            <span>Sales History</span>
-          </a>
-          <a href="#receipt">
+            <span>Reports</span>
+          </button>
+          <button
+            className={activeView === "receipt" ? "active" : ""}
+            onClick={() => setActiveView("receipt")}
+          >
             <Coins size={18} aria-hidden="true" />
             <span>Receipt</span>
-          </a>
+          </button>
         </nav>
 
         <div className="side-metrics">
@@ -1020,12 +1113,22 @@ export default function PosApp() {
       <div className="app-main">
         <header className="topbar">
           <div>
-            <h1>Sales POS</h1>
-            <p>Point of sale, inventory control, and profit check</p>
+            <h1>{viewText[activeView].title}</h1>
+            <p>{viewText[activeView].subtitle}</p>
           </div>
           <div className="top-actions">
           <strong className="role-badge">{isAdmin ? "Admin" : "Cashier"}</strong>
           <span>{user.email}</span>
+          {!isInstalled ? (
+            <button
+              className="install-button"
+              onClick={installApp}
+              type="button"
+            >
+              <Download size={18} aria-hidden="true" />
+              Install
+            </button>
+          ) : null}
           <button
             className="icon-button"
             onClick={() => {
@@ -1049,23 +1152,26 @@ export default function PosApp() {
       </header>
 
       <div className="content">
-      <section className="dashboard">
-        <article className="metric sync-metric">
-          <RefreshCw size={18} aria-hidden="true" />
-          <span>{isOnline ? "Online" : "Offline"}</span>
-          <strong>{pendingSales.length + pendingProductActions.length} pending</strong>
-        </article>
-        {dashboard.map((item) => (
-          <article className="metric" key={item.label}>
-            <item.icon size={18} aria-hidden="true" />
-            <span>{item.label}</span>
-            <strong>{item.value}</strong>
+      {(activeView === "pos" || activeView === "reports") ? (
+        <section className="dashboard">
+          <article className="metric sync-metric">
+            <RefreshCw size={18} aria-hidden="true" />
+            <span>{isOnline ? "Online" : "Offline"}</span>
+            <strong>{pendingSales.length + pendingProductActions.length} pending</strong>
           </article>
-        ))}
-      </section>
+          {dashboard.map((item) => (
+            <article className="metric" key={item.label}>
+              <item.icon size={18} aria-hidden="true" />
+              <span>{item.label}</span>
+              <strong>{item.value}</strong>
+            </article>
+          ))}
+        </section>
+      ) : null}
 
       {syncMessage ? <p className="sync-message">{syncMessage}</p> : null}
 
+      {activeView === "pos" ? (
       <section className="workspace" id="sales-pos">
         <div className="panel product-panel">
           <div className="panel-header">
@@ -1211,19 +1317,25 @@ export default function PosApp() {
           ) : null}
         </aside>
       </section>
+      ) : null}
 
-      {lastReceipt ? (
+      {activeView === "receipt" ? (
         <section className="receipt-print" id="receipt">
           <div className="panel receipt-panel">
             <div className="panel-header compact">
               <div>
                 <h2>Receipt</h2>
-                <span>{lastReceipt.sale.receipt_no}</span>
+                <span>{lastReceipt ? lastReceipt.sale.receipt_no : "No receipt selected"}</span>
               </div>
-              <button className="secondary-action" onClick={() => window.print()}>
+              <button
+                className="secondary-action"
+                onClick={() => window.print()}
+                disabled={!lastReceipt}
+              >
                 Print
               </button>
             </div>
+            {lastReceipt ? (
             <div className="receipt-paper">
               <div className="receipt-brand">
                 <div className="receipt-logo">
@@ -1274,11 +1386,18 @@ export default function PosApp() {
                 </span>
               </div>
             </div>
+            ) : (
+              <div className="empty-products receipt-empty">
+                <Coins size={26} aria-hidden="true" />
+                <strong>No receipt yet</strong>
+                <span>Complete a sale to preview and print the receipt here.</span>
+              </div>
+            )}
           </div>
         </section>
       ) : null}
 
-      {isAdmin ? (
+      {isAdmin && activeView === "inventory" ? (
       <section className="management" id="inventory">
         <form className="panel product-form" onSubmit={saveProduct}>
           <div className="panel-header compact">
@@ -1460,6 +1579,7 @@ export default function PosApp() {
       </section>
       ) : null}
 
+      {activeView === "reports" ? (
       <section className="history" id="sales-history">
         <div className="panel">
           <div className="panel-header history-header">
@@ -1489,6 +1609,28 @@ export default function PosApp() {
               </button>
             </div>
           </div>
+          <div className="payment-summary">
+            <article>
+              <span>Total Profit</span>
+              <strong>{money.format(visibleSalesTotals.profit)}</strong>
+            </article>
+            <article>
+              <span>Total Cash Sales</span>
+              <strong>{money.format(visiblePaymentTotals.cash)}</strong>
+            </article>
+            <article>
+              <span>Total POS Sales</span>
+              <strong>{money.format(visiblePaymentTotals.pos)}</strong>
+            </article>
+            <article>
+              <span>Total Transfers</span>
+              <strong>{money.format(visiblePaymentTotals.transfer)}</strong>
+            </article>
+            <article>
+              <span>Total Credit</span>
+              <strong>{money.format(visiblePaymentTotals.credit)}</strong>
+            </article>
+          </div>
           <div className="history-list">
             {visibleSales.map((sale) => (
               <article className="receipt" key={sale.id}>
@@ -1510,6 +1652,7 @@ export default function PosApp() {
           </div>
         </div>
       </section>
+      ) : null}
       </div>
       </div>
     </main>

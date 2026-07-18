@@ -98,20 +98,23 @@ button:disabled {
   gap: 6px;
 }
 
-.sidebar-nav a {
+.sidebar-nav button {
   display: grid;
+  width: 100%;
   min-height: 40px;
   grid-template-columns: 22px 1fr;
   gap: 9px;
   align-items: center;
   padding: 9px 10px;
+  border: 0;
   border-radius: 8px;
+  background: transparent;
   color: #e9f0f8;
-  text-decoration: none;
+  text-align: left;
 }
 
-.sidebar-nav a:hover,
-.sidebar-nav a.active {
+.sidebar-nav button:hover,
+.sidebar-nav button.active {
   background: rgba(255, 255, 255, 0.12);
 }
 
@@ -492,7 +495,8 @@ label input {
   color: var(--ink);
 }
 
-.logout-button {
+.logout-button,
+.install-button {
   display: inline-flex;
   min-height: 42px;
   align-items: center;
@@ -504,6 +508,12 @@ label input {
   background: white;
   color: var(--ink);
   font-weight: 800;
+}
+
+.install-button {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
 }
 
 .icon-button.small {
@@ -694,6 +704,34 @@ td:first-child {
   height: 40px;
 }
 
+.payment-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  padding: 14px 14px 0;
+}
+
+.payment-summary article {
+  display: grid;
+  gap: 6px;
+  min-height: 72px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.payment-summary span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.payment-summary strong {
+  color: var(--ink);
+  font-size: 1.15rem;
+}
+
 .receipt {
   display: grid;
   grid-template-columns: minmax(0, 1.5fr) 1fr 1fr;
@@ -718,6 +756,10 @@ td:first-child {
 
 .receipt-panel {
   max-width: 520px;
+}
+
+.receipt-empty {
+  margin: 14px;
 }
 
 .receipt-paper {
@@ -826,8 +868,17 @@ td:first-child {
 }
 
 @media print {
+  @page {
+    size: 80mm 210mm;
+    margin: 4mm;
+  }
+
   body * {
     visibility: hidden;
+  }
+
+  body {
+    background: #fff;
   }
 
   .receipt-print,
@@ -838,17 +889,113 @@ td:first-child {
   .receipt-print {
     position: absolute;
     inset: 0 auto auto 0;
-    width: 100%;
-    padding: 16px;
+    width: 72mm;
+    padding: 0;
   }
 
   .receipt-panel {
+    width: 72mm;
     border: 0;
     box-shadow: none;
   }
 
+  .receipt-panel .panel-header {
+    min-height: 0;
+    padding: 0 0 2mm;
+    border: 0;
+  }
+
+  .receipt-panel .panel-header h2,
+  .receipt-panel .panel-header span {
+    display: none;
+  }
+
   .receipt-panel .panel-header button {
     display: none;
+  }
+
+  .receipt-paper {
+    width: 72mm;
+    gap: 3mm;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    color: #000;
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1.35;
+  }
+
+  .receipt-brand {
+    justify-content: center;
+    gap: 1.5mm;
+    padding-bottom: 1.5mm;
+    border-bottom: 1px dashed #222;
+    text-align: center;
+  }
+
+  .receipt-logo {
+    display: none;
+  }
+
+  .receipt-paper h3 {
+    color: #000;
+    font-size: 18px;
+    font-weight: 900;
+  }
+
+  .receipt-paper p,
+  .receipt-meta,
+  .receipt-items,
+  .receipt-total-line,
+  .receipt-footer {
+    color: #000;
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  .receipt-meta {
+    gap: 1.5mm;
+    padding: 2mm 0;
+    border-bottom: 1px dashed #222;
+  }
+
+  .receipt-meta span,
+  .receipt-meta strong,
+  .receipt-items span,
+  .receipt-items small,
+  .receipt-items strong,
+  .receipt-total-line span,
+  .receipt-total-line strong,
+  .receipt-footer span,
+  .receipt-footer strong {
+    color: #000;
+    font-weight: 900;
+  }
+
+  .receipt-meta div,
+  .receipt-items div,
+  .receipt-total-line {
+    gap: 2mm;
+  }
+
+  .receipt-items {
+    gap: 2mm;
+    padding-bottom: 2mm;
+    border-bottom: 1px dashed #222;
+  }
+
+  .receipt-total-line:first-of-type {
+    font-size: 16px;
+    font-weight: 900;
+  }
+
+  .receipt-footer {
+    gap: 1.5mm;
+    margin-top: 1.5mm;
+    padding: 2mm 0 0;
+    background: transparent;
+    border-top: 1px dashed #222;
   }
 }
 
@@ -914,6 +1061,7 @@ td:first-child {
 
   .dashboard,
   .form-grid,
+  .payment-summary,
   .payment-row {
     grid-template-columns: 1fr;
   }

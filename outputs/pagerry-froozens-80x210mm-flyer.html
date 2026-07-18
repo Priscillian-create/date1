@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pagerrys Cold Room Flyer</title>
+  <style>
+    @page {
+      size: 80mm 210mm;
+      margin: 0;
+    }
+
+    :root {
+      color-scheme: light;
+      --ink: #101820;
+      --muted: #4b5563;
+      --green: #0f766e;
+      --gold: #f5b942;
+      --blue: #152338;
+      --paper: #ffffff;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: #e8edf3;
+      color: var(--ink);
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    .toolbar {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      padding: 16px;
+    }
+
+    .toolbar button {
+      min-height: 40px;
+      padding: 8px 14px;
+      border: 0;
+      border-radius: 6px;
+      background: var(--green);
+      color: #fff;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .flyer {
+      width: 80mm;
+      min-height: 210mm;
+      margin: 0 auto 24px;
+      overflow: hidden;
+      background: var(--paper);
+      border: 1px solid #cfd7e3;
+      box-shadow: 0 12px 35px rgba(16, 24, 32, 0.16);
+    }
+
+    .hero {
+      padding: 12mm 7mm 8mm;
+      background: linear-gradient(180deg, var(--blue), #20324e);
+      color: #fff;
+      text-align: center;
+    }
+
+    .brand-mark {
+      display: grid;
+      width: 19mm;
+      height: 19mm;
+      margin: 0 auto 5mm;
+      place-items: center;
+      border-radius: 4mm;
+      background: var(--gold);
+      color: var(--blue);
+      font-size: 18pt;
+      font-weight: 900;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 22pt;
+      line-height: 1;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .tagline {
+      margin: 4mm 0 0;
+      font-size: 11pt;
+      font-weight: 800;
+      color: #dbeafe;
+    }
+
+    .offer {
+      padding: 8mm 7mm 5mm;
+      text-align: center;
+    }
+
+    .offer h2 {
+      margin: 0;
+      color: var(--green);
+      font-size: 21pt;
+      line-height: 1.05;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .offer p {
+      margin: 4mm 0 0;
+      color: var(--muted);
+      font-size: 11pt;
+      font-weight: 800;
+      line-height: 1.35;
+    }
+
+    .items {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2mm;
+      padding: 0 7mm 5mm;
+    }
+
+    .item {
+      min-height: 9mm;
+      padding: 2mm;
+      border: 1px solid #d8dee8;
+      border-radius: 2mm;
+      background: #f8fafc;
+      font-size: 8.8pt;
+      font-weight: 900;
+      text-align: center;
+    }
+
+    .delivery {
+      margin: 0 7mm;
+      padding: 5mm;
+      border-radius: 3mm;
+      background: #e8f6f2;
+      border: 1px solid #b7ded4;
+      text-align: center;
+    }
+
+    .delivery strong {
+      display: block;
+      color: var(--green);
+      font-size: 17pt;
+      line-height: 1.05;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .delivery span {
+      display: block;
+      margin-top: 2mm;
+      font-size: 10.5pt;
+      font-weight: 800;
+    }
+
+    .contact {
+      padding: 7mm;
+      text-align: center;
+    }
+
+    .contact span {
+      display: block;
+      color: var(--muted);
+      font-size: 10pt;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .phone {
+      display: block;
+      margin-top: 2mm;
+      color: var(--blue);
+      font-size: 21pt;
+      line-height: 1;
+      font-weight: 900;
+      letter-spacing: 0;
+    }
+
+    .footer {
+      margin: 0 7mm 7mm;
+      padding-top: 4mm;
+      border-top: 1px dashed #9aa5b1;
+      color: var(--muted);
+      font-size: 9.5pt;
+      font-weight: 800;
+      line-height: 1.35;
+      text-align: center;
+    }
+
+    @media print {
+      body {
+        background: #fff;
+      }
+
+      .toolbar {
+        display: none;
+      }
+
+      .flyer {
+        width: 80mm;
+        min-height: 210mm;
+        margin: 0;
+        border: 0;
+        box-shadow: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <button onclick="window.print()">Print 80mm x 210mm Flyer</button>
+  </div>
+
+  <main class="flyer">
+    <section class="hero">
+      <div class="brand-mark">PG</div>
+      <h1>Pagerrys Cold Room</h1>
+      <p class="tagline">Fresh frozen foods for your home, shop, party, and kitchen.</p>
+    </section>
+
+    <section class="offer">
+      <h2>We Sell Frozen Foods</h2>
+      <p>Freshly packed, affordable, and ready for quick pickup or doorstep delivery.</p>
+    </section>
+
+    <section class="items">
+      <div class="item">Orobo</div>
+      <div class="item">Wings</div>
+      <div class="item">Drumstick</div>
+      <div class="item">Lap</div>
+      <div class="item">Fryer</div>
+      <div class="item">Turkey</div>
+      <div class="item">Kote</div>
+      <div class="item">Shawa</div>
+      <div class="item">Titus</div>
+      <div class="item">Hake Fish</div>
+      <div class="item">Crocker Fish</div>
+      <div class="item">Hot Dog</div>
+      <div class="item">Gizzard</div>
+    </section>
+
+    <section class="delivery">
+      <strong>Free Delivery Available</strong>
+      <span>Order and have it delivered to your doorstep.</span>
+    </section>
+
+    <section class="contact">
+      <span>Order on WhatsApp or Call</span>
+      <strong class="phone">08141606223</strong>
+    </section>
+
+    <footer class="footer">
+      Pagerrys Cold Room delivers quality frozen foods with convenient service.
+      Save this number and order anytime.
+    </footer>
+  </main>
+</body>
+</html>

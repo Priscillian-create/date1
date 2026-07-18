@@ -1,0 +1,19 @@
+{
+  "name": "Pagerrys Cold Room POS",
+  "short_name": "Pagerrys POS",
+  "description": "Offline-capable point of sale for Pagerrys Cold Room.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f4f7fb",
+  "theme_color": "#152338",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
